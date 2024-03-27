@@ -1,0 +1,217 @@
+{# facet search https://cld.agency/blog/multi-faceted-filtering-in-craftcms #}
+{# da valutare se usare un custom behavior https://nystudio107.com/blog/searching-craft-cms-matrix-blocks  #}
+
+{% set motorization = motorization ?? '' %}
+{% set filterChamberDiameter = filterChamberDiameter ?? '' %}
+{% set filteringMediaAndProperties = filteringMediaAndProperties ?? '' %}
+
+{# Active filers #}
+{% set filters = {
+  motorization: motorization,
+  filterChamberDiameter: filterChamberDiameter,
+  filteringMediaAndProperties: filteringMediaAndProperties,
+} %}
+
+{# Init products query #}
+{% set productsQuery = craft.entries()
+  .section('products')
+  .with([
+    'productVersions'
+  ]) %}
+
+{% set filterParameters = ['and'] %}
+
+{# add relations parameters #}
+{% set filterParameters = motorization ? filterParameters|merge([{ targetElement: motorization, field: 'productVersions.motorization' }]) : filterParameters %}
+{% set filterParameters = filterChamberDiameter ? filterParameters|merge([{ targetElement: filterChamberDiameter, field: 'productVersions.filterChamberDiameter' }]) : filterParameters %}
+{% set filterParameters = filteringMediaAndProperties ? filterParameters|merge([{ targetElement: filteringMediaAndProperties, field: 'productVersions.filteringMediaAndProperties' }]) : filterParameters %}
+
+{# add relation parameters #}
+{% if filterParameters | length > 1 %}
+  {% do productsQuery.relatedTo(filterParameters) %}
+{% endif %}
+
+{# get products filtered #}
+{%
+  set products = productsQuery.cache().all()
+%}
+
+{% set categoriesToShow = [] %}
+
+{# Loop for all filters #}
+{% for key, f in filters %}
+  {# Set up products query #}
+  {%
+  set p = craft.entries().section('products').limit(null)
+  %}
+
+  {# For each filter (taxonomy) I compose parameters for a query #}
+  {% set categoryParams = ['and'] %}
+
+  {# For each filter, with the exception of the one currently cycled, I find all the IDs of the products that belong to it #}
+  {% set params = ['and'] %}
+  {% for key2, f2 in filters %}
+    {% if key2 != key and f2 != '' %}
+      {% set params = params | merge([{
+        targetElement: f2,
+        field: 'productVersions'
+      }])
+      %}
+    {% endif %}
+  {% endfor %}
+  {% if params|length > 1 %}
+    {% do p.relatedTo(params) %}
+  {% endif %}
+
+  {# I add categories to the query parameters #}
+  {% set categoryParams = categoryParams | merge([{
+      sourceElement: p.ids(),
+      field: 'productVersions'
+    }])
+  %}
+  
+  {# I add the categories to show to the array #}
+  {% set categoriesToShow = categoriesToShow | merge({
+      (key): craft.categories().group(key).relatedTo(categoryParams).cache().all()
+    })
+  %}
+  
+{% endfor %}
+
+{% do sprig.pushUrl('?' ~ filters|url_encode) %}
+
+{% cache using key filters|json_encode %}
+  
+<div id="results" class="flex gap-4" s-replace="#results">
+
+  <div class="w-64">
+  {# {{ dump(allProductIds) }} #}
+
+    <h3 class="text-xl font-medium mb-4">
+      {{ "Filters" | t }}
+    </h3>
+
+    {# motorizations #}
+    {% for key, values in categoriesToShow %}
+
+      <h4 class="text-base font-medium mb-4">{{ key | t }}</h4>
+      <div class="grid gap-4 grid-cols-1 mb-4">
+        <button class="button {{ filters[(key)] != '' ? 'button-default' : '' }}"
+          sprig
+          s-vals="{{ filters | merge({ (key) : ''}) | json_encode }}"
+        >
+          {{ "All" | t }}
+        </button>
+
+        {% for value in values  %}
+          <button class="button {{ value.id != filters[(key)] ? 'button-default' : '' }}"
+            sprig
+            s-vals="{{ filters | merge({ (key) : value.id}) | json_encode }}"
+          >
+            {{ value.title }}
+          </button>
+        {% endfor %}
+      </div>
+    {% endfor %}
+      
+
+    {# filterChamberDiameters  #}
+    {# {% if filterChamberDiameters is not empty %}
+      <h4 class="text-base font-medium mt-8 mb-4">{{ "Filter Chamber Diameter" | t }}</h4>
+      <div class="grid gap-4 grid-cols-1">
+
+        <button class="button {{ filterChamberDiameter != '' ? 'button-default' : '' }}"
+          sprig
+          s-vals="{{ filters | merge({filterChamberDiameter: ''}) | json_encode }}"
+        >
+          {{ "All" | t }}
+        </button>
+
+        {% for filterChamber in filterChamberDiameters %}      
+          <button class="button {{ filterChamber.id != filterChamberDiameter ? 'button-default' : '' }}"
+            sprig
+            s-vals="{{ filters | merge({filterChamberDiameter: filterChamber.id}) | json_encode }}"
+          >
+            {{ filterChamber.title }}
+          </button>
+        {% endfor %}
+      </div>
+    {% endif %} #}
+
+    {# filteringMediaAndProperties #}
+    {# {% if filteringMediaAndProperties is not empty %}
+      <h4 class="text-base font-medium mt-8 mb-4">{{ "Filtering Media And Properties" | t }}</h4>
+      <div class="grid gap-4 grid-cols-1">
+
+        <button class="button {{ filteringMediaAndProperty != '' ? 'button-default' : '' }}"
+          sprig
+          s-vals="{{ filters | merge({filteringMediaAndProperty: ''}) | json_encode }}"
+        >
+          {{ "All" | t }}
+        </button>
+
+        {% for category in filteringMediaAndProperties %}      
+          <button class="button {{ category.id != filteringMediaAndProperty ? 'button-default' : '' }}"
+            sprig
+            s-vals="{{ filters | merge({filteringMediaAndProperty: category.id}) | json_encode }}"
+          >
+            {{ category.title }}
+          </button>
+        {% endfor %}
+      </div>
+    {% endif %} #}
+  </div>
+
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+    {% for product in products %}
+      <div class="bg-white border-2 rounded border-gray-200 p-4">
+        <h4 class="mb-4 text-lg font-medium">{{ product.title }}</h4>
+        Motorization
+        {% set motorizationsToShow = [] %}
+
+        {% for version in product.productVersions.all() %}
+          {% if version not in motorizationsToShow %}
+            {% set motorizationsToShow = motorizationsToShow | merge([version.motorization.one()]) %}
+          {% endif %}
+        {% endfor %}
+
+
+
+        <ul class="text-xs">
+          {% for version in motorizationsToShow %}
+            <li>{{ version ? version.title : '' }}</li>
+          {% endfor %}
+        </ul>
+
+        <hr>
+
+        Filter Chamber Diameter
+        <ul class="text-xs">
+          {% for version in product.productVersions.all() %}
+            {% set filterChamberDiameter = version.filterChamberDiameter.one() %}
+            <li>{{ filterChamberDiameter ? filterChamberDiameter.title : '' }}</li>
+          {% endfor %}
+        </ul>
+
+        <hr>
+
+        filteringMediaAndProperties
+        <ul class="text-xs">
+          {% for version in product.productVersions.all() %}
+            {% set filterChamberDiameter = version.filteringMediaAndProperties.one() %}
+            <li>{{ filterChamberDiameter ? filterChamberDiameter.title : '' }}</li>
+          {% endfor %}
+        </ul>
+
+        <br />
+
+        
+        <a href="{{ product.url }}" class="button">{{ "View Product" | t }}</a>
+      </div>
+    {% endfor %}
+  </div>
+
+</div>
+
+{% endcache %}
